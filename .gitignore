@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Regenerable intermediates (rebuild with `python -m bijection.make_dataset`)
+work/*.npz
+work/*.log
+work/*.pkl
+
+# Submission outputs. candidate_pairs.tsv runs to several hundred MB, past
+# GitHub's 100 MB per-file limit. Regenerate with `python -m bijection.predict`.
+output/*.tsv
+*_submission.zip
+
+# Never commit the challenge dataset itself
+dataset/
+*.tsv.gz
+
+.DS_Store
