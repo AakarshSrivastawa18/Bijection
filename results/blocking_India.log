@@ -1,0 +1,14 @@
+[load]  S1=5,000  pool=4,133,346  (18.4s)
+[index] vocab=872,983  postings=64,664,567  (319.8s)
+[raw]   2.6s  candidates/entity: mean=627.3 median=549 max=3555
+[rerank] 5,000 entities in 2.1s (2,367 entities/s)
+
+=== BLOCKING  country=India  (rerank_pool=200) ===
+  KEYS-ONLY   recall=0.9681  avg_cand= 627.35   <- ceiling the keys allow
+  K=5         recall=0.8303  avg_cand=   4.99  ceiling_F0.5=0.9505  rr=1.21e-06
+  K=10        recall=0.9110  avg_cand=   9.94  ceiling_F0.5=0.9685  rr=2.41e-06
+  K=15        recall=0.9205  avg_cand=  14.86  ceiling_F0.5=0.9717  rr=3.59e-06
+  K=20        recall=0.9263  avg_cand=  19.73  ceiling_F0.5=0.9740  rr=4.77e-06
+  K=25        recall=0.9297  avg_cand=  24.58  ceiling_F0.5=0.9751  rr=5.95e-06
+  K=30        recall=0.9322  avg_cand=  29.39  ceiling_F0.5=0.9759  rr=7.11e-06
+  K=50        recall=0.9374  avg_cand=  48.33  ceiling_F0.5=0.9784  rr=1.17e-05

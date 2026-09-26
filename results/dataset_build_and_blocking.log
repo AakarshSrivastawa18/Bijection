@@ -1,0 +1,18 @@
+===== US =====
+[load]  S1=80,000  pool=6,186,873  (18.5s)
+[index] vocab=1,200,695  postings=92,981,541  (433.6s)
+[feat]  X=(1577902, 34)  positives=264,929 (16.79%)  (212.1s)
+[block] pair_completeness=0.95297  entities_with_all_matches=0.85304
+  avg_candidates/S1=19.72  max=20  total=1,577,902
+  search_space=494,949,840,000  reduction_ratio=3.188e-06
+  CEILING macro_F0.5=0.98544
+[save]  /Users/aakarsh/Desktop/Bijection/work/ds_US_80000.npz
+===== India =====
+[load]  S1=60,000  pool=4,133,346  (17.8s)
+[index] vocab=873,213  postings=64,664,567  (349.6s)
+[feat]  X=(1182309, 34)  positives=191,919 (16.23%)  (130.9s)
+[block] pair_completeness=0.92431  entities_with_all_matches=0.79140
+  avg_candidates/S1=19.71  max=20  total=1,182,309
+  search_space=248,000,760,000  reduction_ratio=4.767e-06
+  CEILING macro_F0.5=0.97411
+[save]  /Users/aakarsh/Desktop/Bijection/work/ds_India_60000.npz
