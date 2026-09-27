@@ -2,7 +2,7 @@
 
 **Team Name:** Bijection
 **Team Members:** Aakarsh Srivastava
-**Submission Date:** 2026-09-26
+**Submission Date:** 2026-09-27
 
 ---
 
@@ -10,15 +10,15 @@
 
 A four-stage pipeline — mined normalization → country-partitioned conjunctive blocking →
 LightGBM over string/overlap/**listwise** features → F0.5-tuned decision layer — reaching
-**macro-F0.5 0.959 (US) and 0.946 (India)** on held-out validation while emitting only
-**19.7 candidates per Source-1 entity**, a 3.2 × 10⁻⁶ reduction ratio.
+**macro-F0.5 0.963 (US) and 0.950 (India)** on held-out validation while emitting only
+**24.6 candidates per Source-1 entity**, a ~4 × 10⁻⁶ reduction ratio.
 
 Two things distinguish it. First, **every normalization table is mined from the training
 ground truth rather than hardcoded** — US state codes, street abbreviations, and a
 1,222-entry transliteration table covering nine Indic scripts — which satisfies the
 no-external-data rule and is also why the pipeline transfers to France, a country with
 zero training rows. Second, **listwise features dominate the model**: a candidate's score
-z-scored within its own Source-1 group carries 49.3% of total model gain, more than every
+z-scored within its own Source-1 group carries 54.7% of total model gain, more than every
 string-similarity feature combined.
 
 ---
@@ -101,9 +101,9 @@ string metric.
             |
    [1] normalize ................. unicode fold, homoglyph skeleton, mined rule tables
             |
-   [2] block ..................... conjunctive inverted index -> top-20 per entity
+   [2] block ..................... conjunctive inverted index -> top-25 per entity
             |                      >>> candidate_pairs.tsv written here <<<
-   [3] score ..................... LightGBM over 34 features
+   [3] score ..................... LightGBM over 36 features
             |
    [4] decide .................... F0.5-tuned threshold + one-to-one assignment
             |
@@ -133,15 +133,24 @@ dropped at build time. Mined alternates are expanded **at probe time only** — 
 symmetric, so probing `{st, street, saint}` against a raw-token index catches the match in
 either direction at half the index size.
 
-**Candidate pairs generated:** 20 per Source-1 entity (19.7 mean, a few entities retrieve
-fewer). Over the full test set that is ~34.6M pairs against a 1.73 × 10¹³ brute-force space.
+**Candidate pairs generated:** 25 per Source-1 entity (24.6 mean). Over the full test set
+that is ~42.7M pairs against a 1.73 × 10¹³ brute-force space.
+
+**LSH typo family (added after leaderboard round 1):** 4 bands × 2 rows of MinHash over
+char-3grams of the whole skeletonised name. This is the only key family that can retrieve
+"Bsigaman" for "Bingaman" — every other family needs an exact shared token. Collision
+probability ≈ 0.83 at 3gram-Jaccard 0.6 (a one-typo name), near zero for unrelated names.
 
 **Measured blocking quality** (full-pool evaluation, ground truth held out):
 
 | Country | Recall@20 | Avg cand/entity | Reduction ratio | Ceiling macro-F0.5 |
 |---|---|---|---|---|
-| US | **0.95297** | 19.72 | 3.19 × 10⁻⁶ | 0.98544 |
-| India | **0.92431** | 19.71 | 4.77 × 10⁻⁶ | 0.97411 |
+| US | **0.95541** | 24.63 | 3.98 × 10⁻⁶ | 0.98627 |
+| India | **0.92841** | 24.65 | 5.96 × 10⁻⁶ | 0.97563 |
+
+(First leaderboard round ran K=20 without the LSH family: US 0.95297 / India 0.92431.
+The loss decomposition after that round showed blocking misses were 4.7% / 7.6% of true
+matches — a hard cap no model change can recover — which motivated both additions.)
 
 **How true matches were kept:** the key union was chosen against the measured 99.99%
 ceiling in §2.1; the skeleton normalization recovers homoglyph noise that token-exact keys
@@ -179,11 +188,12 @@ goes unused is the wrong trade.
 
 ## 4. Matching Model
 
-**Features used** (34 total, all lexical/structural — **no feature encodes country**, since
+**Features used** (36 total, all lexical/structural — **no feature encodes country**, since
 France would make any such feature undefined):
 
 * **Name string:** `ratio`, `token_sort_ratio`, `token_set_ratio`, `partial_ratio`,
-  Jaro-Winkler. Each fails differently — `token_sort` survives transposition, `partial`
+  Jaro-Winkler, OSA (Levenshtein + adjacent transposition — added in round 2 for the
+  transposition-typo noise class none of the others measures directly; also on address). Each fails differently — `token_sort` survives transposition, `partial`
   survives DBA prefixes, plain `ratio` catches character noise — so the tree picks.
 * **Address string:** `ratio`, `token_sort`, `token_set`, `partial`.
 * **Structured overlap:** IDF-weighted name/address intersection mass, asymmetric coverage
@@ -192,7 +202,7 @@ France would make any such feature undefined):
 * **Listwise (within the Source-1 candidate group):** blocking score, rank,
   score-ratio-to-top, score-gap-to-top, **score z-score within group**, group size.
 
-**Model type:** LightGBM (MIT), binary objective, 96 leaves, lr 0.06, 700 rounds.
+**Model type:** LightGBM (MIT), binary objective, 160 leaves, lr 0.05, early-stopped at 2056 rounds (validation logloss was still falling at the round-1 cap of 700 — the model was under-trained).
 Chosen over a neural cross-encoder because the test set requires ~34.6M inferences on
 CPU-only 8-core/16 GB hardware, and the noise is lexical rather than semantic.
 
@@ -200,21 +210,21 @@ CPU-only 8-core/16 GB hardware, and the noise is lexical rather than semantic.
 
 | Feature | Gain % |
 |---|---|
-| `score_z` (listwise) | **49.31** |
-| `block_score` (listwise) | 13.25 |
-| `num_jaccard` | 5.18 |
-| `name_token_sort` | 3.50 |
-| `name_partial` | 3.22 |
-| `name_cover_cand` | 3.10 |
-| `addr_token_set` | 3.02 |
-| `rank` (listwise) | 2.00 |
+| `score_z` (listwise) | **54.68** |
+| `block_score` (listwise) | 6.49 |
+| `num_jaccard` | 4.80 |
+| `rank` (listwise) | 3.78 |
+| `addr_token_set` | 2.92 |
+| `name_token_sort` | 2.92 |
+| `name_partial` | 2.89 |
+| `name_cover_cand` | 2.84 |
 
-The listwise block contributes ~65% of total gain. This is the single most valuable design
+The listwise block contributes ~67% of total gain. This is the single most valuable design
 decision in the matcher: knowing a candidate is "the 7th best of 20, 2.1 standard deviations
 below the leader" is worth more than any pairwise string comparison.
 
 **Threshold selection:** macro-F0.5 sweep on a pooled cross-country validation slice, not
-accuracy or AUC. The optimum is **0.70** — well above 0.5, exactly as the metric's asymmetry
+accuracy or AUC. The optimum is **0.68** — well above 0.5, exactly as the metric's asymmetry
 predicts. For a 3-match entity, one false positive costs 0.211 while one false negative costs
 0.091, a 2.3× penalty.
 
@@ -230,9 +240,14 @@ rows, 16.5% positive.
 
 | Slice | macro-F0.5 | Precision | Recall | Exact sets | % of blocking ceiling |
 |---|---|---|---|---|---|
-| US held-out | **0.95926** | 0.9814 | 0.9112 | 70.6% | 97.3% |
-| India held-out | **0.94561** | 0.9723 | 0.8924 | 66.6% | 97.1% |
-| Pooled | **0.95343** | 0.9775 | 0.9031 | — | — |
+| US held-out | **0.96274** | 0.9819 | 0.9216 | 73.0% | 97.6% |
+| India held-out | **0.95039** | 0.9737 | 0.9037 | 69.1% | 97.4% |
+| Pooled | **0.95715** | 0.9782 | 0.9135 | — | — |
+
+(Leaderboard round 1 — K=20, 34 features, 96 leaves × 700 rounds — scored **0.945** with
+pooled validation 0.95343; the validation-to-leaderboard gap was ~0.008. Round 2 adds the
+LSH blocking family, K=25, two OSA character-distance features, 160 leaves × 2056 rounds
+(early-stopped), threshold 0.68.)
 
 **Leave-one-country-out — the France proxy.** France has zero training rows, so the in-domain
 numbers above would flatter it. Training on one country and testing on the other:
@@ -245,6 +260,12 @@ numbers above would flatter it. Training on one country and testing on the other
 France should be expected in the **0.89–0.91** band, not 0.95. Weighting the three countries
 by their test entity counts (US 38.3%, India 46.7%, France 15.0%) gives an expected test score
 around **0.94**.
+
+**A decision-layer idea the sweep rejected.** A "rescue" rule (give an empty entity its
+single best sub-threshold candidate) was added in round 2 and tuned on validation — and the
+sweep chose to DISABLE it (no-rescue 0.95715 vs best rescue 0.95673). With the deeper,
+better-calibrated model, sub-threshold candidates are genuinely below the precision bar.
+The machinery ships (tests included) but the tuned configuration turns it off.
 
 **An ablation that did not go as predicted.** The one-to-one assignment step — the property
 the team is named after — contributes **+0.00008 (US) and +0.00005 (India)**. The structural

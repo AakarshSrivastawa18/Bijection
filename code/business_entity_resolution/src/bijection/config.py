@@ -33,7 +33,10 @@ TEST = {
 # ---------------------------------------------------------------- blocking
 # Max candidates emitted per Source-1 entity. This is the number that decides
 # both the recall ceiling and the reduction ratio reported in candidate_pairs.tsv.
-TOP_K = 20
+# Raised 20->25 after the loss decomposition on the first leaderboard submission
+# (0.945): blocking misses were 4.7% (US) / 7.6% (India) of true matches, a hard
+# cap no model change can recover, and measured recall@25 - recall@20 was ~+0.4%.
+TOP_K = 25
 
 # A token appearing in more than this many records of a country-shard is treated
 # as non-discriminative and never used as half of a conjunctive blocking key.

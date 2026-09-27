@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Sequence, Tuple
+from zlib import crc32
 
 import numpy as np
 
@@ -67,6 +68,7 @@ K_NUM_ADDR = 2      # house number + address word
 K_NAME_NUM = 3      # name token + house number
 K_NAME_PAIR = 4     # two name tokens
 K_EXACT_NAME = 5    # whole normalized name (rescues empty-address records)
+K_NAME_LSH = 6      # char-3gram MinHash band over the whole name
 
 # Relative trust of each family, used to rank candidates during the probe walk.
 KEY_WEIGHT = {
@@ -75,7 +77,33 @@ KEY_WEIGHT = {
     K_NAME_NUM: 3.0,
     K_NAME_PAIR: 2.0,
     K_EXACT_NAME: 4.0,
+    K_NAME_LSH: 1.2,     # recall net for typo'd names; deliberately low-trust
 }
+
+# MinHash LSH over name char-3grams: 4 bands x 2 rows. A pair of names with
+# 3gram-Jaccard J collides on at least one band with p = 1-(1-J^2)^4, i.e. ~0.83
+# at J=0.6 (a one-typo name) while staying near zero for unrelated names. This is
+# the only key family that can retrieve "Bsigaman" for "Bingaman" - token-equality
+# keys need an exact shared token, and measured blocking loss shows 4.7% (US) to
+# 7.6% (India) of true matches have none.
+LSH_BANDS = 4
+
+def lsh_bands(tokens: Sequence[str]) -> List[int]:
+    """Deterministic per-record band values; crc32, not blake2b, for speed
+    (this runs ~12M times per full pass)."""
+    if not tokens:
+        return []
+    s = " ".join(sorted(set(tokens)))
+    if len(s) < 3:
+        grams = [s.encode()]
+    else:
+        grams = [s[i:i + 3].encode() for i in range(len(s) - 2)]
+    out: List[int] = []
+    for b in range(LSH_BANDS):
+        h1 = min(crc32(g, 2 * b + 1) for g in grams)
+        h2 = min(crc32(g, 2 * b + 2) for g in grams)
+        out.append(_mix(97 + b, h1, h2))
+    return out
 
 MAX_NAME_TOKENS = 3
 MAX_ADDR_WORDS = 3
@@ -119,9 +147,16 @@ class RecordStore:
     word_off: np.ndarray = field(default=None)
     num_tok: np.ndarray = field(default=None)
     num_off: np.ndarray = field(default=None)
+    # MinHash band values (int64), NOT vocab ids - interning 12M x 4 band strings
+    # would cost ~6 GB of dict; packed ints cost 384 MB.
+    lsh_tok: np.ndarray = field(default=None)
+    lsh_off: np.ndarray = field(default=None)
 
     def __len__(self) -> int:
         return len(self.ids)
+
+    def lsh(self, i: int) -> np.ndarray:
+        return self.lsh_tok[self.lsh_off[i]:self.lsh_off[i + 1]]
 
     def names(self, i: int) -> np.ndarray:
         return self.name_tok[self.name_off[i]:self.name_off[i + 1]]
@@ -180,6 +215,8 @@ def build_store(records: Iterable[Tuple[str, str, str]], rules: RuleSet,
     full: List[int] = []
     nnames: List[str] = []
     naddrs: List[str] = []
+    lt: List[int] = []
+    lo: List[int] = [0]
 
     for eid, name, addr in records:
         n, w, d, nn, na = prepare(name, addr, rules)
@@ -187,6 +224,8 @@ def build_store(records: Iterable[Tuple[str, str, str]], rules: RuleSet,
         nnames.append(nn)
         naddrs.append(na)
         full.append(name_vocab.add(" ".join(sorted(n))) if n else -1)
+        lt.extend(lsh_bands(n))
+        lo.append(len(lt))
         seen = set()
         for tok in n:
             i = vocab.add(tok)
@@ -211,6 +250,7 @@ def build_store(records: Iterable[Tuple[str, str, str]], rules: RuleSet,
         name_tok=np.asarray(nt, dtype=np.int32), name_off=np.asarray(no, dtype=np.int64),
         word_tok=np.asarray(wt, dtype=np.int32), word_off=np.asarray(wo, dtype=np.int64),
         num_tok=np.asarray(dt, dtype=np.int32), num_off=np.asarray(do, dtype=np.int64),
+        lsh_tok=np.asarray(lt, dtype=np.int64), lsh_off=np.asarray(lo, dtype=np.int64),
     )
     dfa = np.zeros(len(vocab), dtype=np.int64)
     for i, c in df.items():
@@ -231,7 +271,8 @@ def _top_by_idf(toks: np.ndarray, df: np.ndarray, k: int) -> List[int]:
 
 
 def record_keys(names: Sequence[int], words: Sequence[int], nums: Sequence[int],
-                name_full: int) -> List[Tuple[int, int, int, int]]:
+                name_full: int, lsh: Sequence[int] = ()
+                ) -> List[Tuple[int, int, int, int]]:
     """(key_hash, family, token_a, token_b) for one record.
 
     The constituent token ids are returned alongside the hash so the probe side can
@@ -254,6 +295,8 @@ def record_keys(names: Sequence[int], words: Sequence[int], nums: Sequence[int],
             out.append((_mix(K_NAME_PAIR, a, b), K_NAME_PAIR, a, b))
     if name_full >= 0:
         out.append((_mix(K_EXACT_NAME, name_full, 0), K_EXACT_NAME, -1, -1))
+    for v in lsh:
+        out.append((_mix(K_NAME_LSH, int(v), 0), K_NAME_LSH, -1, -1))
     return out
 
 
@@ -276,7 +319,8 @@ class BlockIndex:
             names = _top_by_idf(store.names(i), df, MAX_NAME_TOKENS)
             words = _top_by_idf(store.words(i), df, MAX_ADDR_WORDS)
             nums = [int(x) for x in np.unique(store.nums(i))[:MAX_NUMS]]
-            for k, fam, _a, _b in record_keys(names, words, nums, full_name_ids[i]):
+            for k, fam, _a, _b in record_keys(names, words, nums, full_name_ids[i],
+                                              store.lsh(i)):
                 keys.append(k)
                 vals.append(i)
                 fams.append(fam)

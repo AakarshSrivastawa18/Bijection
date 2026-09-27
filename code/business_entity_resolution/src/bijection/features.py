@@ -25,13 +25,14 @@ from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 from rapidfuzz import fuzz
-from rapidfuzz.distance import JaroWinkler
+from rapidfuzz.distance import OSA, JaroWinkler
 
 FEATURE_NAMES: List[str] = [
     # --- name string similarity
     "name_ratio", "name_token_sort", "name_token_set", "name_partial", "name_jw",
+    "name_osa",
     # --- address string similarity
-    "addr_ratio", "addr_token_sort", "addr_token_set", "addr_partial",
+    "addr_ratio", "addr_token_sort", "addr_token_set", "addr_partial", "addr_osa",
     # --- structured overlap
     "name_idf_overlap", "name_cover_s1", "name_cover_cand", "name_jaccard",
     "addr_idf_overlap", "addr_cover_s1", "addr_cover_cand", "addr_jaccard",
@@ -81,11 +82,17 @@ def pair_features(
         fuzz.token_set_ratio(s1_name, c_name) / 100.0,
         fuzz.partial_ratio(s1_name, c_name) / 100.0,
         JaroWinkler.similarity(s1_name, c_name),
+        # OSA = Levenshtein + adjacent transposition. Added after the first
+        # leaderboard round: 4-5% of retrieved true matches scored below the
+        # threshold, and transposition typos ("Bsigaman"/"Bingaman") are the
+        # noise class none of the metrics above measures directly.
+        OSA.normalized_similarity(s1_name, c_name),
 
         fuzz.ratio(s1_addr, c_addr) / 100.0,
         fuzz.token_sort_ratio(s1_addr, c_addr) / 100.0,
         fuzz.token_set_ratio(s1_addr, c_addr) / 100.0,
         fuzz.partial_ratio(s1_addr, c_addr) / 100.0,
+        OSA.normalized_similarity(s1_addr, c_addr),
 
         n_inter,
         _safe_div(n_inter, n_s1),

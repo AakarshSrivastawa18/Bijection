@@ -162,3 +162,29 @@ def test_candidates_never_returns_duplicates():
     for i in range(len(sh.s1)):
         idxs = [j for j, _ in p.candidates(i, 50)]
         assert len(idxs) == len(set(idxs))
+
+
+def test_lsh_bands_deterministic_and_typo_tolerant():
+    from bijection.blocking import LSH_BANDS, lsh_bands
+    a = lsh_bands(["bingaman", "harper", "guallpa"])
+    assert a == lsh_bands(["bingaman", "harper", "guallpa"])   # deterministic
+    assert len(a) == LSH_BANDS
+    # one-typo name shares at least one band (the whole point of the family)
+    b = lsh_bands(["bsigaman", "harper", "guallpa"])
+    assert set(a) & set(b)
+    # unrelated names share none
+    c = lsh_bands(["completely", "different", "words"])
+    assert not set(a) & set(c)
+    assert lsh_bands([]) == []
+
+
+def test_lsh_retrieves_typo_only_match():
+    """A pool record reachable through NO token-equality key (name typo'd, no
+    address) must still be retrieved via the LSH family."""
+    s1 = [("S1-1", "Bingaman Consulting Harper", "")]
+    pool = [("S2-T", "Bsigaman Consulting Harper", ""),
+            ("S2-F", "Zzz Unrelated Qqq", "")]
+    sh = build_shard("US", s1, pool, RULES, max_posting=1000)
+    p = Prober(sh, RULES)
+    got = {sh.pool.ids[j] for j, _ in p.candidates(0, 10)}
+    assert "S2-T" in got

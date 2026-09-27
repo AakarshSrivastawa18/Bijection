@@ -32,22 +32,32 @@ Triple = Tuple[str, str, float]   # (source1_id, candidate_id, score)
 def assign(triples: Iterable[Triple], threshold: float,
            all_s1: Sequence[str],
            max_per_source: Mapping[str, int] | None = None,
-           one_to_one: bool = True) -> Dict[str, List[str]]:
+           one_to_one: bool = True,
+           rescue: float | None = None) -> Dict[str, List[str]]:
     """Greedy score-descending assignment under the one-to-one and cap constraints.
 
     Greedy is an approximation to maximum-weight bipartite b-matching, but with
     scores this separated the two coincide almost everywhere, and greedy is O(n log n)
     rather than cubic - which matters at 34.6M candidate pairs.
+
+    `rescue`: entities that end up EMPTY after the main pass get their single best
+    candidate if it scores >= rescue (< threshold). Rationale: only 5.6% of entities
+    are true singletons, so an empty prediction is usually a miss, and for an entity
+    with n true matches one correct rescue moves its F0.5 from 0 to 1.25/(0.25+n) -
+    worth it whenever the rescued candidate is right more than ~n/5 of the time.
     """
     caps = dict(max_per_source or config.MAX_PER_SOURCE)
-    kept = [t for t in triples if t[2] >= threshold]
+    floor = threshold if rescue is None else min(threshold, rescue)
+    kept = [t for t in triples if t[2] >= floor]
     kept.sort(key=lambda t: -t[2])
 
     out: Dict[str, List[str]] = {s: [] for s in all_s1}
     taken: set = set()
     per_src: Dict[Tuple[str, str], int] = defaultdict(int)
 
-    for s1, cid, _score in kept:
+    for s1, cid, score in kept:
+        if score < threshold:
+            break                         # sorted: everything below is rescue-only
         if one_to_one and cid in taken:
             continue
         src = cid[:2]
@@ -61,6 +71,20 @@ def assign(triples: Iterable[Triple], threshold: float,
         per_src[(s1, src)] += 1
         if one_to_one:
             taken.add(cid)
+
+    if rescue is not None and rescue < threshold:
+        # second pass, still score-descending, only for entities that stayed empty
+        for s1, cid, score in kept:
+            if score >= threshold:
+                continue
+            lst = out.get(s1)
+            if lst is None or lst:
+                continue
+            if one_to_one and cid in taken:
+                continue
+            lst.append(cid)
+            if one_to_one:
+                taken.add(cid)
     return out
 
 

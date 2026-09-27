@@ -21,8 +21,11 @@ from .features import FEATURE_NAMES
 PARAMS = {
     "objective": "binary",
     "metric": ["binary_logloss", "auc"],
-    "learning_rate": 0.06,
-    "num_leaves": 96,
+    # Raised from lr 0.06 / 96 leaves after the first leaderboard round: at 700
+    # rounds validation logloss was still falling (best_iter == the cap), i.e. the
+    # model was under-trained. Early stopping on the held-out slice is the guard.
+    "learning_rate": 0.05,
+    "num_leaves": 160,
     "min_data_in_leaf": 80,
     "feature_fraction": 0.85,
     "bagging_fraction": 0.85,

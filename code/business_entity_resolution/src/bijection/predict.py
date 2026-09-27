@@ -48,16 +48,22 @@ def _open_outputs(out_dir: Path) -> Tuple:
 def run(split: str = "test", top_k: int = config.TOP_K,
         threshold: float | None = None, out_dir: Path | None = None,
         countries: Sequence[str] | None = None, one_to_one: bool = True,
-        limit: int = 0) -> None:
+        limit: int = 0, rescue: float | None = None) -> None:
     src = _sources(split)
     out_dir = out_dir or config.OUTPUT_DIR
     rules = RuleSet.load()
     booster = M.load()
     if threshold is None:
         tp = config.WORK_DIR / "threshold.txt"
-        threshold = float(tp.read_text().strip()) if tp.exists() else 0.5
+        if tp.exists():
+            lines = tp.read_text().splitlines()
+            threshold = float(lines[0])
+            if rescue is None and len(lines) > 1 and lines[1].strip():
+                rescue = float(lines[1])
+        else:
+            threshold = 0.5
     print(f"[cfg] split={split} top_k={top_k} threshold={threshold:.3f} "
-          f"one_to_one={one_to_one}")
+          f"rescue={rescue} one_to_one={one_to_one}")
 
     todo = list(countries) if countries else sorted(list_countries(src["s1"]))
     print(f"[cfg] countries={todo}")
@@ -100,8 +106,9 @@ def run(split: str = "test", top_k: int = config.TOP_K,
                     cf.write(f"{s}\t{','.join(cs)}\n")
                     n_cand += len(cs)
                 seen_entities.update(groups)
+                floor = threshold if rescue is None else min(threshold, rescue)
                 for s, c, p in zip(row_s1, row_cand, scores):
-                    if p >= threshold:
+                    if p >= floor:
                         kept.append((s, c, float(p)))
                 done += len(groups)
                 if done and done % 200_000 < 20_000:
@@ -115,7 +122,8 @@ def run(split: str = "test", top_k: int = config.TOP_K,
             print(f"[{country}] scored {len(all_ids):,} entities, "
                   f"{len(kept):,} pairs >= threshold ({time.time()-t0:.0f}s)", flush=True)
 
-            matches = assign(kept, threshold, all_ids, one_to_one=one_to_one)
+            matches = assign(kept, threshold, all_ids, one_to_one=one_to_one,
+                             rescue=rescue)
             for e in all_ids:
                 ids = matches.get(e, [])
                 mf.write(f"{e}\t{','.join(ids)}\n")

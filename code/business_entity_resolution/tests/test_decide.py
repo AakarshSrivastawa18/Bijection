@@ -82,3 +82,31 @@ def test_tune_threshold_rewards_correct_singletons():
     sweep = tune_threshold(tri, gt, ["S1-1", "S1-2"], grid=[0.5, 0.9])
     # 0.9 keeps only the true match and correctly leaves S1-1 empty -> 1.0 average
     assert sweep.best_threshold == 0.9 and sweep.best_f05 == 1.0
+
+
+def test_rescue_fills_only_empty_entities():
+    tri = [("S1-1", "S2-a", 0.9),            # above threshold
+           ("S1-2", "S2-b", 0.55),           # below threshold, above rescue
+           ("S1-2", "S2-c", 0.45),
+           ("S1-3", "S2-d", 0.2)]            # below rescue too
+    out = assign(tri, 0.7, ["S1-1", "S1-2", "S1-3"], rescue=0.4)
+    assert out["S1-1"] == ["S2-a"]
+    assert out["S1-2"] == ["S2-b"]           # best sub-threshold candidate, ONE only
+    assert out["S1-3"] == []                 # below the rescue floor stays empty
+
+
+def test_rescue_never_adds_second_match():
+    tri = [("S1-1", "S2-a", 0.9), ("S1-1", "S2-b", 0.6)]
+    out = assign(tri, 0.7, ["S1-1"], rescue=0.4)
+    assert out["S1-1"] == ["S2-a"]           # non-empty entities are untouched
+
+
+def test_rescue_respects_one_to_one():
+    tri = [("S1-1", "S2-x", 0.9), ("S1-2", "S2-x", 0.6)]
+    out = assign(tri, 0.7, ["S1-1", "S1-2"], rescue=0.4, one_to_one=True)
+    assert out["S1-1"] == ["S2-x"] and out["S1-2"] == []
+
+
+def test_rescue_none_is_old_behaviour():
+    tri = [("S1-1", "S2-a", 0.55)]
+    assert assign(tri, 0.7, ["S1-1"], rescue=None) == {"S1-1": []}

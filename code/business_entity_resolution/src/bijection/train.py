@@ -27,7 +27,7 @@ import numpy as np
 
 from . import config, model as M
 from .decide import Triple, assign, tune_threshold
-from .metrics import score_matching
+from .metrics import score_matching  # noqa: F401  (used in _eval and rescue sweep)
 
 
 class Split:
@@ -134,17 +134,36 @@ def main() -> None:
         tri_all += [(a, b, float(p)) for a, b, p in zip(s1s, cds, sc)]
         gt_all.update({e: sp.gt.get(e, []) for e in sp.va_ent})
         ids_all += sorted(sp.va_ent)
+    # coarse sweep, then refine around the winner at 0.01 resolution
     sweep = tune_threshold(tri_all, gt_all, ids_all)
+    t0 = sweep.best_threshold
+    fine = [round(t0 + d, 2) for d in
+            (-0.04, -0.03, -0.02, -0.01, 0.0, 0.01, 0.02, 0.03, 0.04)]
+    sweep2 = tune_threshold(tri_all, gt_all, ids_all, grid=fine)
     print(f"\n[threshold sweep - pooled validation]\n{sweep.report()}")
-    thr = sweep.best_threshold
+    print(f"[fine sweep]\n{sweep2.report()}")
+    thr = sweep2.best_threshold
 
-    print(f"\n=== VALIDATION (threshold={thr:.2f}) ===")
+    # rescue sweep: give empty entities their best sub-threshold candidate
+    print(f"\n[rescue sweep @ threshold={thr:.2f}]")
+    best_r, best_f = None, sweep2.best_f05
+    for r in (0.20, 0.30, 0.40, 0.50, 0.60):
+        pred = assign(tri_all, thr, ids_all, one_to_one=True, rescue=r)
+        f = score_matching(pred, gt_all).macro_f05
+        mark = ""
+        if f > best_f:
+            best_f, best_r, mark = f, r, "  <-- best"
+        print(f"  rescue={r:.2f}  F0.5={f:.5f}{mark}")
+    print(f"  no rescue    F0.5={sweep2.best_f05:.5f}")
+
+    print(f"\n=== VALIDATION (threshold={thr:.2f}, rescue={best_r}) ===")
     for sp in splits:
         _eval(booster, sp, sp.va_mask, sp.va_ent, thr, f"{sp.name} held-out", ablate=True)
-    print(f"  {'POOLED':22s} F0.5={sweep.best_f05:.5f}")
+    print(f"  {'POOLED (final)':22s} F0.5={best_f:.5f}")
 
-    (config.WORK_DIR / "threshold.txt").write_text(f"{thr}\n")
-    print(f"\n[saved] threshold={thr} -> {config.WORK_DIR/'threshold.txt'}")
+    (config.WORK_DIR / "threshold.txt").write_text(
+        f"{thr}\n{'' if best_r is None else best_r}\n")
+    print(f"\n[saved] threshold={thr} rescue={best_r} -> {config.WORK_DIR/'threshold.txt'}")
 
 
 if __name__ == "__main__":  # pragma: no cover

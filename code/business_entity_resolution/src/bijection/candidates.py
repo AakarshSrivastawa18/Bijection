@@ -117,7 +117,7 @@ class Prober:
         words = self._expand_ids(words)[: MAX_ADDR_WORDS * 3]
 
         scores: Dict[int, float] = {}
-        keys = record_keys(names, words, nums, sh.s1_full[i])
+        keys = record_keys(names, words, nums, sh.s1_full[i], sh.s1.lsh(i))
         idx = sh.index
         idf = self.idf
         nidf = float(idf.max()) if idf.size else 1.0
