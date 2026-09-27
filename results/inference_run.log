@@ -1,0 +1,26 @@
+[cfg] split=test top_k=20 threshold=0.700 one_to_one=True
+[cfg] countries=['France', 'India', 'US']
+
+[France] S1=259,452 pool=1,434,993 (load 12s)
+[France] index postings=17,430,693 (94s)
+[France]   scored ~200,000 entities
+[France] scored 259,452 entities, 835,341 pairs >= threshold (247s)
+
+[India] S1=809,986 pool=4,717,565 (load 14s)
+[India] index postings=74,900,186 (444s)
+[India]   scored ~219,999 entities
+[India]   scored ~419,995 entities
+[India]   scored ~619,994 entities
+[India]   scored ~809,980 entities
+[India] scored 809,986 entities, 2,523,425 pairs >= threshold (2966s)
+
+[US] S1=663,106 pool=3,817,031 (load 16s)
+[US] index postings=59,634,533 (267s)
+[US]   scored ~200,000 entities
+[US]   scored ~400,000 entities
+[US]   scored ~600,000 entities
+[US] scored 663,106 entities, 2,100,285 pairs >= threshold (874s)
+
+[done] entities=1,732,544  candidates=34,133,531 (19.70/entity)  matches=5,418,257 (3.13/entity)
+[out] /Users/aakarsh/Desktop/Bijection/output/candidate_pairs.tsv
+[out] /Users/aakarsh/Desktop/Bijection/output/matching_results.tsv

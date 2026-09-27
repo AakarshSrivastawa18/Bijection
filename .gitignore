@@ -19,3 +19,6 @@ dataset/
 *.tsv.gz
 
 .DS_Store
+
+# 157MB of split parts duplicating the Release asset
+share/

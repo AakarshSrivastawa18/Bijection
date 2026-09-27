@@ -1,0 +1,20 @@
+=== PREDICT FINISHED ===
+[US]   scored ~200,000 entities
+[US]   scored ~400,000 entities
+[US]   scored ~600,000 entities
+[US] scored 663,106 entities, 2,100,285 pairs >= threshold (874s)
+
+[done] entities=1,732,544  candidates=34,133,531 (19.70/entity)  matches=5,418,257 (3.13/entity)
+[out] /Users/aakarsh/Desktop/Bijection/output/candidate_pairs.tsv
+[out] /Users/aakarsh/Desktop/Bijection/output/matching_results.tsv
+
+=== ROW COUNTS (need 1,732,544 each) ===
+matching_results     1732544
+candidate_pairs      1732544
+
+=== OFFICIAL VALIDATOR ===
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python: can't open file '/../utils/validate_submission.py': [Errno 2] No such file or directory
+
+validator exit=0
+=== PACKAGING ===
+BUILT: 228M
